@@ -18,10 +18,12 @@ class Document(BaseModel):
 
 class SearchQuery(BaseModel):
     """Search query parameters"""
-    keyword: str
-    search_fields: List[str] = ["title", "headings", "background", "scope"]
+    query: str = ""
+    keyword: str = ""
+    search_fields: List[str] = ["title", "headings", "background", "scope", "content"]
     page: int = 1
     page_size: int = 20
+    limit: int = 20
 
 class SearchResult(BaseModel):
     """Individual search result"""
@@ -29,6 +31,8 @@ class SearchResult(BaseModel):
     title: str
     snippet: str
     file_path: str
+    file_type: str = "pdf"
+    download_url: str = ""
     score: float
     highlights: dict = {}
 
@@ -40,7 +44,7 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
 
 class ExportRequest(BaseModel):
-    """Export request model"""
+    """Export request parameters"""
     document_ids: List[str]
     format: str = "pdf"  # pdf, docx, csv
-    include_summary: bool = False  # For future AI summary generation
+    include_summary: bool = False
