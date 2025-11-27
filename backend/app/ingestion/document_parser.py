@@ -99,3 +99,7 @@ class DocumentParser:
             'created_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat()
         }
+    
+    def parse(self, file_path: str) -> Optional[Dict]:
+        """Instance method wrapper for parse_document"""
+        return self.parse_document(file_path)
