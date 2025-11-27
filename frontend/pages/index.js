@@ -63,7 +63,7 @@ export default function Home() {
         <link rel="icon" href="/favicon.ico" />
       </Head>
       
-      <div className="min-h-screen bg-gradient-to-br from-woods-light to-white">
+      <div className="flex flex-col min-h-screen bg-gradient-to-br from-woods-light to-white">
         {/* Header */}
         <div className="bg-woods-primary text-white shadow-lg">
           <div className="max-w-6xl mx-auto px-4 py-6">
@@ -80,7 +80,7 @@ export default function Home() {
         </div>
 
         {/* Main Content */}
-        <div className="max-w-6xl mx-auto px-4 py-8">
+        <div className="flex-grow max-w-6xl w-full mx-auto px-4 py-8">
           {/* Search Bar */}
           <div className="bg-white rounded-xl shadow-lg p-6 mb-8">
             <form onSubmit={handleSearch}>
@@ -191,7 +191,7 @@ export default function Home() {
                       {/* Actions */}
                       <div className="mt-4 pt-4 border-t border-gray-200 flex gap-3">
                         <button
-                          onClick={() => handleDownload(doc.id, doc.title)}
+                          onClick={() => handleDownload(doc.id, `${doc.title}.pdf`)}
                           className="inline-flex items-center gap-2 px-4 py-2 bg-woods-primary text-white rounded-lg hover:bg-woods-dark transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -199,8 +199,10 @@ export default function Home() {
                           </svg>
                           Download PDF
                         </button>
-                        <button
-                          onClick={() => window.open(doc.file_path, '_blank')}
+                        <a
+                          href={`${API_URL}${doc.download_url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 px-4 py-2 border-2 border-woods-secondary text-woods-secondary rounded-lg hover:bg-woods-secondary hover:text-white transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +210,7 @@ export default function Home() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                           View Details
-                        </button>
+                        </a>
                       </div>
                     </div>
                   </div>
@@ -218,8 +220,8 @@ export default function Home() {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="mt-16 bg-woods-dark text-white py-6">
+        {/* Footer - Fixed at bottom */}
+        <div className="mt-auto bg-woods-dark text-white py-6">
           <div className="max-w-6xl mx-auto px-4 text-center">
             <p className="text-sm text-gray-400">
               Woods Document Search Engine POC • Built with FastAPI, Elasticsearch & Next.js
