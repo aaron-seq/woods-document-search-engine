@@ -58,8 +58,8 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Woods Document Search Engine</title>
-        <meta name="description" content="Woods internal document search powered by AI" />
+        <title>Wood AI Internal Document Search Engine</title>
+        <meta name="description" content="Wood AI-powered internal document search" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
       
@@ -69,8 +69,8 @@ export default function Home() {
           <div className="max-w-6xl mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-3xl font-bold">Woods</h1>
-                <p className="text-woods-secondary text-sm mt-1">Document Search Engine</p>
+                <h1 className="text-3xl font-bold">Wood AI</h1>
+                <p className="text-woods-secondary text-sm mt-1">Internal Document Search Engine</p>
               </div>
               <div className="text-sm text-gray-300">
                 POC Version 1.0
@@ -224,7 +224,7 @@ export default function Home() {
         <div className="mt-auto bg-woods-dark text-white py-6">
           <div className="max-w-6xl mx-auto px-4 text-center">
             <p className="text-sm text-gray-400">
-              Woods Document Search Engine POC • Built with FastAPI, Elasticsearch & Next.js
+              Wood AI Internal Document Search Engine • Built with FastAPI, Elasticsearch & Next.js
             </p>
             <p className="text-xs text-gray-500 mt-2">
               For internal use only • {new Date().getFullYear()}
