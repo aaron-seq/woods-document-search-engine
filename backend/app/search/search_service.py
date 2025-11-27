@@ -61,6 +61,8 @@ class SearchService:
                     title=source['title'],
                     snippet=snippet,
                     file_path=source['file_path'],
+                    file_type=source.get('file_type', 'pdf'),
+                    download_url=f"/documents/{source['id']}/download",
                     score=hit['_score'],
                     highlights=highlights
                 ))
