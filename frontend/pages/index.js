@@ -9,6 +9,7 @@ export default function Home() {
   const [error, setError] = useState(null);
   const [searched, setSearched] = useState(false);
   const [searchPrompt, setSearchPrompt] = useState('');
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -53,6 +54,14 @@ export default function Home() {
       alert('Download failed. Please try again.');
       console.error('Download error:', err);
     }
+  };
+
+  const handlePreview = (doc) => {
+    setPreviewDoc(doc);
+  };
+
+  const closePreview = () => {
+    setPreviewDoc(null);
   };
 
   return (
@@ -199,10 +208,8 @@ export default function Home() {
                           </svg>
                           Download PDF
                         </button>
-                        <a
-                          href={`${API_URL}${doc.download_url}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          onClick={() => handlePreview(doc)}
                           className="inline-flex items-center gap-2 px-4 py-2 border-2 border-woods-secondary text-woods-secondary rounded-lg hover:bg-woods-secondary hover:text-white transition-colors"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -210,7 +217,7 @@ export default function Home() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
                           View Details
-                        </a>
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -219,6 +226,51 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        {/* PDF Preview Modal */}
+        {previewDoc && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={closePreview}>
+            <div className="bg-white rounded-lg w-full max-w-6xl h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-4 border-b">
+                <h3 className="text-xl font-semibold text-woods-primary">{previewDoc.title}</h3>
+                <button
+                  onClick={closePreview}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* PDF Viewer */}
+              <div className="flex-1 overflow-hidden">
+                <iframe
+                  src={`${API_URL}/documents/${previewDoc.id}/preview`}
+                  className="w-full h-full"
+                  title={previewDoc.title}
+                />
+              </div>
+              
+              {/* Modal Footer */}
+              <div className="p-4 border-t flex justify-end gap-3">
+                <button
+                  onClick={() => handleDownload(previewDoc.id, `${previewDoc.title}.pdf`)}
+                  className="px-4 py-2 bg-woods-primary text-white rounded-lg hover:bg-woods-dark transition-colors"
+                >
+                  Download
+                </button>
+                <button
+                  onClick={closePreview}
+                  className="px-4 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer - Fixed at bottom */}
         <div className="mt-auto bg-woods-dark text-white py-6">
