@@ -35,7 +35,7 @@ DOCUMENTS_DIR.mkdir(exist_ok=True)
 
 @app.get("/")
 async def root():
-    return {"message": "Woods Document Search API", "version": settings.VERSION}
+    return {"message": "Wood AI Internal Document Search API", "version": settings.VERSION}
 
 @app.get("/search", response_model=SearchResponse)
 async def search_documents(
@@ -57,24 +57,58 @@ async def search_documents_post(query: SearchQuery):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def find_document_by_id(doc_id: str) -> Optional[Path]:
+    """Find document file by various ID formats"""
+    # Try exact match first
+    for ext in ['.pdf', '.docx']:
+        doc_path = DOCUMENTS_DIR / f"{doc_id}{ext}"
+        if doc_path.exists():
+            return doc_path
+    
+    # Try without extension if doc_id already has one
+    doc_path = DOCUMENTS_DIR / doc_id
+    if doc_path.exists():
+        return doc_path
+    
+    # Try fuzzy search - look for doc_id as substring
+    for f in DOCUMENTS_DIR.glob("*.*"):
+        if f.suffix in ['.pdf', '.docx']:
+            # Check if doc_id matches stem or is contained in stem
+            if doc_id == f.stem or doc_id in f.stem or f.stem in doc_id:
+                return f
+    
+    return None
+
 @app.get("/documents/{doc_id}/download")
 async def download_document(doc_id: str):
     """Download a document by ID"""
     try:
-        # Search for document to get filename
-        doc_path = DOCUMENTS_DIR / f"{doc_id}.pdf"
-        if not doc_path.exists():
-            # Try to find by searching
-            for f in DOCUMENTS_DIR.glob("*.pdf"):
-                if doc_id in f.stem:
-                    doc_path = f
-                    break
-        if not doc_path.exists():
-            raise HTTPException(status_code=404, detail="Document not found")
+        doc_path = find_document_by_id(doc_id)
+        if not doc_path:
+            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+        
         return FileResponse(
             path=str(doc_path),
-            media_type="application/pdf",
+            media_type="application/pdf" if doc_path.suffix == '.pdf' else "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             filename=doc_path.name
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents/{doc_id}/preview")
+async def preview_document(doc_id: str):
+    """Preview a document by ID (for inline display)"""
+    try:
+        doc_path = find_document_by_id(doc_id)
+        if not doc_path:
+            raise HTTPException(status_code=404, detail=f"Document not found: {doc_id}")
+        
+        return FileResponse(
+            path=str(doc_path),
+            media_type="application/pdf" if doc_path.suffix == '.pdf' else "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"inline; filename={doc_path.name}"}
         )
     except HTTPException:
         raise
@@ -121,15 +155,15 @@ async def export_documents(request: ExportRequest):
         if request.format == "pdf":
             content = exporter.export_to_pdf(request.document_ids, request.include_summary)
             media_type = "application/pdf"
-            filename = "woods_documents.pdf"
+            filename = "wood_ai_documents.pdf"
         elif request.format == "docx":
             content = exporter.export_to_docx(request.document_ids, request.include_summary)
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            filename = "woods_documents.docx"
+            filename = "wood_ai_documents.docx"
         else:
             content = exporter.export_to_csv(request.document_ids)
             media_type = "text/csv"
-            filename = "woods_documents.csv"
+            filename = "wood_ai_documents.csv"
         
         return StreamingResponse(
             io.BytesIO(content),
