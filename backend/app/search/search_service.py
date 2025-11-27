@@ -12,12 +12,15 @@ class SearchService:
     
     def search(self, query: SearchQuery) -> SearchResponse:
         """Execute search query"""
+        # Use query field if keyword is empty
+        search_term = query.keyword if query.keyword else query.query
+        
         must_queries = []
         
-        if query.keyword:
+        if search_term and search_term.strip():
             must_queries.append({
                 "multi_match": {
-                    "query": query.keyword,
+                    "query": search_term,
                     "fields": query.search_fields,
                     "type": "best_fields",
                     "fuzziness": "AUTO"
