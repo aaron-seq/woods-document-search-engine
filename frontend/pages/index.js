@@ -16,12 +16,12 @@ export default function Home() {
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
-    
+
     setLoading(true);
     setError(null);
     setSearched(true);
     setSearchPrompt(`Searching for "${query}" related documents...`);
-    
+
     try {
       const response = await axios.get(`${API_URL}/search`, {
         params: { query, limit: 20 }
@@ -67,20 +67,25 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Wood AI Internal Document Search Engine</title>
+        <title>Wood Internal Document Search Engine</title>
         <meta name="description" content="Wood AI-powered internal document search" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-      
+
       <div className="flex flex-col min-h-screen bg-gradient-to-br from-woods-light to-white">
         {/* Header */}
         <div className="bg-woods-primary text-white shadow-lg">
           <div className="max-w-6xl mx-auto px-4 py-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl font-bold">Wood AI</h1>
-                <p className="text-woods-secondary text-sm mt-1">Internal Document Search Engine</p>
+              {/* Left side: Logo + Title */}
+              <div className="flex items-center gap-4">
+                <img src="/wood-logo.png" alt="Wood Group" className="h-12" />
+                <div>
+                  <p className="text-xl font-semibold">Internal Document Search Engine</p>
+                  <p className="text-sm opacity-90">Powered by AI</p>
+                </div>
               </div>
+              {/* Right side: Version badge */}
               <div className="text-sm text-gray-300">
                 POC Version 1.0
               </div>
@@ -118,7 +123,7 @@ export default function Home() {
                     ) : 'Search'}
                   </button>
                 </div>
-                
+
                 {/* Search Tips */}
                 <div className="text-sm text-gray-600">
                   <span className="font-semibold text-woods-primary">Search Tips:</span> Use keywords like "corrosion", "inspection", "safety" to find relevant documents. Fuzzy matching enabled.
@@ -163,7 +168,7 @@ export default function Home() {
                   Found {results.length} document{results.length !== 1 ? 's' : ''}
                 </h2>
               </div>
-              
+
               <div className="space-y-4">
                 {results.map((doc, idx) => (
                   <div key={idx} className="bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow border-l-4 border-woods-secondary">
@@ -243,7 +248,7 @@ export default function Home() {
                   </svg>
                 </button>
               </div>
-              
+
               {/* PDF Viewer */}
               <div className="flex-1 overflow-hidden">
                 <iframe
@@ -252,7 +257,7 @@ export default function Home() {
                   title={previewDoc.title}
                 />
               </div>
-              
+
               {/* Modal Footer */}
               <div className="p-4 border-t flex justify-end gap-3">
                 <button
@@ -276,7 +281,7 @@ export default function Home() {
         <div className="mt-auto bg-woods-dark text-white py-6">
           <div className="max-w-6xl mx-auto px-4 text-center">
             <p className="text-sm text-gray-400">
-              Wood AI Internal Document Search Engine • Built with FastAPI, Elasticsearch & Next.js
+              Wood Internal Document Search Engine • Built with FastAPI, Elasticsearch & Next.js
             </p>
             <p className="text-xs text-gray-500 mt-2">
               For internal use only • {new Date().getFullYear()}
