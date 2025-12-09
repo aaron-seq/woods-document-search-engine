@@ -11,6 +11,9 @@ export default function Home() {
   const [searchPrompt, setSearchPrompt] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
 
+  const [summary, setSummary] = useState(null);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
   const handleSearch = async (e) => {
@@ -20,6 +23,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     setSearched(true);
+    setSummary(null); // Reset summary
     setSearchPrompt(`Searching for "${query}" related documents...`);
 
     try {
@@ -34,6 +38,23 @@ export default function Home() {
       console.error('Search error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!query) return;
+
+    setGeneratingSummary(true);
+    try {
+      const response = await axios.post(`${API_URL}/summarize`, {
+        query: query
+      });
+      setSummary(response.data.summary);
+    } catch (err) {
+      console.error('Summarize error:', err);
+      setError('Failed to generate summary.');
+    } finally {
+      setGeneratingSummary(false);
     }
   };
 
@@ -79,7 +100,7 @@ export default function Home() {
             <div className="flex items-center justify-between">
               {/* Left side: Logo + Title */}
               <div className="flex items-center gap-4">
-                <img src="/wood-logo.png" alt="Wood Group" className="h-12" />
+                <img src="/Wood-logo-WHITE-45mm.png" alt="Wood Group" className="h-12" />
                 <div>
                   <p className="text-xl font-semibold">Internal Document Search Engine</p>
                   <p className="text-sm opacity-90">Powered by AI</p>
@@ -160,6 +181,32 @@ export default function Home() {
             </div>
           )}
 
+          {/* AI Summary Section */}
+          {(summary || generatingSummary) && (
+            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl shadow-sm p-6 mb-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-bold text-gray-800">AI Summary</h3>
+              </div>
+
+              {generatingSummary ? (
+                <div className="flex flex-col gap-3 animate-pulse">
+                  <div className="h-4 bg-indigo-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-indigo-200 rounded w-full"></div>
+                  <div className="h-4 bg-indigo-200 rounded w-5/6"></div>
+                </div>
+              ) : (
+                <div className="prose prose-indigo max-w-none text-gray-700">
+                  <p className="whitespace-pre-line leading-relaxed">{summary}</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Results */}
           {results.length > 0 && (
             <div>
@@ -167,6 +214,18 @@ export default function Home() {
                 <h2 className="text-xl font-semibold text-woods-primary">
                   Found {results.length} document{results.length !== 1 ? 's' : ''}
                 </h2>
+
+                {!summary && !generatingSummary && (
+                  <button
+                    onClick={handleSummarize}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Summarize with AI
+                  </button>
+                )}
               </div>
 
               <div className="space-y-4">
