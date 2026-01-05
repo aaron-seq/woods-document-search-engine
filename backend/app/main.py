@@ -1,8 +1,18 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    BackgroundTasks,
+    Query,
+    UploadFile,
+    File,
+    Request,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, FileResponse
 import io
 import os
+import logging
+import uuid
 from pathlib import Path
 from typing import List, Optional
 from app.config import settings
@@ -18,7 +28,12 @@ from app.search.llm_service import LLMService
 from app.export.exporter import DocumentExporter
 from app.ingestion.indexer import DocumentIndexer
 from app.ingestion.document_parser import DocumentParser
+from app.utils.logging_config import setup_logging, set_correlation_id
 from sentence_transformers import SentenceTransformer
+
+# Initialize structured logging
+setup_logging()
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME, version=settings.VERSION)
 
@@ -31,10 +46,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def correlation_id_middleware(request: Request, call_next):
+    """Add correlation ID to each request for tracing"""
+    correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+    set_correlation_id(correlation_id)
+    response = await call_next(request)
+    response.headers["X-Correlation-ID"] = correlation_id
+    return response
+
+
 # Load AI Model (Shared)
-print(f"Loading shared AI model: {settings.EMBEDDING_MODEL_NAME}...")
+logger.info(f"Loading shared AI model: {settings.EMBEDDING_MODEL_NAME}")
 shared_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
-print("Shared model loaded.")
+logger.info("Shared model loaded successfully")
 
 # Services
 search_service = SearchService(shared_model)
@@ -138,7 +164,7 @@ async def summarize_documents(request: SummaryRequest):
         return SummaryResponse(summary=summary, query=request.query)
 
     except Exception as e:
-        print(f"Error generating summary: {e}")
+        logger.error(f"Error generating summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -236,7 +262,7 @@ async def ingest_documents(background_tasks: BackgroundTasks):
                     )
                     indexed_count += 1
             except Exception as e:
-                print(f"Error indexing {file_path}: {e}")
+                logger.error(f"Error indexing {file_path}: {e}", exc_info=True)
 
         return {"message": f"Indexed {indexed_count} documents", "count": indexed_count}
     except Exception as e:
@@ -275,4 +301,33 @@ async def export_documents(request: ExportRequest):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Health check endpoint with detailed system status"""
+    health_status = {
+        "status": "healthy",
+        "version": settings.VERSION,
+        "environment": settings.ENVIRONMENT,
+        "components": {
+            "api": "healthy",
+            "elasticsearch": "unknown",
+            "model": "healthy",
+        },
+    }
+
+    # Check Elasticsearch connectivity
+    try:
+        from elasticsearch import Elasticsearch
+
+        es = Elasticsearch(
+            [f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"]
+        )
+        if es.ping():
+            health_status["components"]["elasticsearch"] = "healthy"
+        else:
+            health_status["components"]["elasticsearch"] = "unhealthy"
+            health_status["status"] = "degraded"
+    except Exception as e:
+        logger.warning(f"Elasticsearch health check failed: {e}")
+        health_status["components"]["elasticsearch"] = "unhealthy"
+        health_status["status"] = "degraded"
+
+    return health_status
