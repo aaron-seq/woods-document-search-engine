@@ -29,6 +29,7 @@ from app.export.exporter import DocumentExporter
 from app.ingestion.indexer import DocumentIndexer
 from app.ingestion.document_parser import DocumentParser
 from app.utils.logging_config import setup_logging, set_correlation_id
+from app.database import get_es_client, ElasticsearchClient
 from sentence_transformers import SentenceTransformer
 
 # Initialize structured logging
@@ -91,8 +92,12 @@ async def search_documents(
     try:
         search_query = SearchQuery(query=query, limit=limit)
         return search_service.search(search_query)
+    except ValueError as e:
+        logger.warning(f"Invalid search query: {e}", extra={"query": query})
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Search error: {e}", extra={"query": query}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Search failed")
 
 
 @app.post("/search", response_model=SearchResponse)
@@ -100,93 +105,165 @@ async def search_documents_post(query: SearchQuery):
     """Search documents by keyword (POST method)"""
     try:
         return search_service.search(query)
+    except ValueError as e:
+        logger.warning(f"Invalid search query: {e}", extra={"query": query.query})
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Search error: {e}", extra={"query": query.query}, exc_info=True)
+        raise HTTPException(status_code=500, detail="Search failed")
 
 
 @app.post("/summarize", response_model=SummaryResponse)
 async def summarize_documents(request: SummaryRequest):
-    """Generate AI summary for a query based on relevant documents"""
+    """
+    Generate AI summary for a query based on relevant documents.
+    
+    Fixed implementation:
+    - Uses ES-stored content instead of synchronous file I/O
+    - No blocking file operations in async endpoint
+    - Proper error handling with specific exceptions
+    - Eliminates bare except clauses
+    """
     try:
+        logger.info(
+            "Generating summary",
+            extra={"query": request.query}
+        )
+        
         # 1. Search for relevant documents
         search_query = SearchQuery(query=request.query, limit=5)
         search_results = search_service.search(search_query)
 
-        # 2. Extract content from results
+        if not search_results.results:
+            logger.info(
+                "No documents found for summary query",
+                extra={"query": request.query}
+            )
+            return SummaryResponse(
+                summary="No relevant documents found for your query. Please try different search terms.",
+                query=request.query
+            )
+
+        # 2. Extract context from search results
+        # Use ES-stored content instead of re-parsing files
+        # The search results already contain snippets from ES
         context_docs = []
-        for result in search_results.results:
-            # We need to fetch the full content (or at least enough for summarization)
-            # The search result 'snippet' might be too short.
-            # Ideally search service returns full content or sufficient context.
-            # For POC, let's assume we can fetch the document content if we have the file path or ID.
-            # But wait, search_result has 'snippet' and 'highlights'.
-            # We might want to use the 'content' field from ES if we asked for it.
-            # SearchService currently only returns SearchResult with snippets.
-            # Let's rely on what's in ES. We can modify SearchService to return more data or query ES here again?
-            # Better: Make SearchService return 'content' in a hidden field or fetch by ID.
-            # For simplicity, let's look up the file or re-query ES by ID?
-            # Actually, `search_service.search` retrieves source. I should probably add `content` to `SearchResult` or fetch it.
-
-            # Quick fix: Use the snippet for now, or fetch by ID.
-            # Let's try to fetch by ID using the same logic as `download_document` or `find_document_by_id`.
-            # Accessing file system is slow.
-            # Let's rely on ES source if possible.
-            # I will just use the `snippet` for now if it's long enough, OR I'll update `SearchService` later to return full content.
-            # For "Senior ML Engineer" quality, I should do RAG properly. RAG needs context.
-            # I'll try to find the document file since I have `find_document_by_id` available in this file.
-            pass
-
-        # Real implementation: Fetch full content for top 3 docs
-        top_docs = search_results.results[:3]
-        real_context = []
-        for doc in top_docs:
-            # Reconstruct content from file (expensive but accurate)
-            # OR just use the snippet if it captured the relevant part.
-            # Let's use the file parser again? No, too slow.
-            # Let's assume the Snippet + Background is decent context for the POC.
-            # Or better, read the file content since we have `doc.file_path`.
-            # `doc.file_path` comes from ES.
-
-            # CAUTION: `doc.file_path` might be inside docker container path.
-            # Let's try to read it.
+        
+        # Get additional content from Elasticsearch for top 3 results
+        es_client = get_es_client()
+        top_results = search_results.results[:3]
+        
+        for result in top_results:
             try:
-                # doc.file_path is absolute path in container?
-                # parser.parse returns dict.
-                if doc.file_path:
-                    # Depending on how it was indexed.
-                    full_doc = parser.parse(doc.file_path)  # Utilize existing parser
-                    if full_doc:
-                        real_context.append(full_doc)
-            except:
-                continue
+                # Fetch full document from ES to get more context
+                doc = es_client.get(
+                    index=settings.ELASTICSEARCH_INDEX,
+                    id=result.id
+                )
+                
+                if doc and '_source' in doc:
+                    source = doc['_source']
+                    # Combine relevant fields for context
+                    context = {
+                        'title': source.get('title', ''),
+                        'background': source.get('background', ''),
+                        'scope': source.get('scope', ''),
+                        'content': source.get('content', '')[:1000],  # Limit to prevent token overflow
+                    }
+                    context_docs.append(context)
+                    
+            except Exception as e:
+                logger.warning(
+                    f"Failed to fetch document {result.id} from ES: {e}",
+                    extra={"doc_id": result.id},
+                    exc_info=True
+                )
+                # Use the snippet from search results as fallback
+                context_docs.append({
+                    'title': result.title,
+                    'content': result.snippet
+                })
 
-        summary = llm_service.generate_summary(request.query, real_context)
+        if not context_docs:
+            logger.warning(
+                "Failed to extract context from any documents",
+                extra={"query": request.query}
+            )
+            return SummaryResponse(
+                summary="Unable to generate summary due to document access issues.",
+                query=request.query
+            )
+
+        # 3. Generate summary using LLM service
+        summary = llm_service.generate_summary(request.query, context_docs)
+        
+        logger.info(
+            "Summary generated successfully",
+            extra={
+                "query": request.query,
+                "doc_count": len(context_docs),
+                "summary_length": len(summary)
+            }
+        )
+        
         return SummaryResponse(summary=summary, query=request.query)
 
+    except ValueError as e:
+        logger.warning(f"Invalid summary request: {e}", extra={"query": request.query})
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error generating summary: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            f"Error generating summary: {e}",
+            extra={"query": request.query},
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate summary. Please try again."
+        )
 
 
 def find_document_by_id(doc_id: str) -> Optional[Path]:
-    """Find document file by various ID formats"""
+    """
+    Find document file by various ID formats.
+    
+    Security: Validates doc_id to prevent path traversal attacks.
+    """
+    # Sanitize doc_id to prevent path traversal
+    # Remove any path separators and parent directory references
+    safe_doc_id = doc_id.replace('/', '').replace('\\\\', '').replace('..', '')
+    
+    # Only allow alphanumeric, hyphens, and underscores
+    import re
+    if not re.match(r'^[a-zA-Z0-9_-]+$', safe_doc_id):
+        logger.warning(
+            f"Invalid document ID format",
+            extra={"doc_id": doc_id, "sanitized": safe_doc_id}
+        )
+        return None
+    
     # Try exact match first
     for ext in [".pdf", ".docx"]:
-        doc_path = DOCUMENTS_DIR / f"{doc_id}{ext}"
-        if doc_path.exists():
+        doc_path = DOCUMENTS_DIR / f"{safe_doc_id}{ext}"
+        if doc_path.exists() and doc_path.parent == DOCUMENTS_DIR:
             return doc_path
 
     # Try without extension if doc_id already has one
-    doc_path = DOCUMENTS_DIR / doc_id
-    if doc_path.exists():
+    doc_path = DOCUMENTS_DIR / safe_doc_id
+    if doc_path.exists() and doc_path.parent == DOCUMENTS_DIR:
         return doc_path
 
     # Try fuzzy search - look for doc_id as substring
-    for f in DOCUMENTS_DIR.glob("*.*"):
-        if f.suffix in [".pdf", ".docx"]:
-            # Check if doc_id matches stem or is contained in stem
-            if doc_id == f.stem or doc_id in f.stem or f.stem in doc_id:
-                return f
+    try:
+        for f in DOCUMENTS_DIR.glob("*.*"):
+            if f.suffix in [".pdf", ".docx"]:
+                # Check if doc_id matches stem or is contained in stem
+                if safe_doc_id == f.stem or safe_doc_id in f.stem or f.stem in safe_doc_id:
+                    # Verify file is actually in DOCUMENTS_DIR (no path traversal)
+                    if f.parent == DOCUMENTS_DIR:
+                        return f
+    except Exception as e:
+        logger.error(f"Error during document search: {e}", exc_info=True)
 
     return None
 
@@ -209,7 +286,12 @@ async def download_document(doc_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            f"Error downloading document: {e}",
+            extra={"doc_id": doc_id},
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Failed to download document")
 
 
 @app.get("/documents/{doc_id}/preview")
@@ -230,7 +312,12 @@ async def preview_document(doc_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            f"Error previewing document: {e}",
+            extra={"doc_id": doc_id},
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Failed to preview document")
 
 
 @app.post("/ingest")
@@ -262,11 +349,21 @@ async def ingest_documents(background_tasks: BackgroundTasks):
                     )
                     indexed_count += 1
             except Exception as e:
-                logger.error(f"Error indexing {file_path}: {e}", exc_info=True)
+                logger.error(
+                    f"Error indexing file: {e}",
+                    extra={"file_path": str(file_path)},
+                    exc_info=True
+                )
 
+        logger.info(
+            f"Ingestion completed",
+            extra={"indexed": indexed_count, "total": len(all_files)}
+        )
+        
         return {"message": f"Indexed {indexed_count} documents", "count": indexed_count}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Ingestion error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to ingest documents")
 
 
 @app.post("/export")
@@ -295,13 +392,25 @@ async def export_documents(request: ExportRequest):
             media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename={filename}"},
         )
+    except ValueError as e:
+        logger.warning(f"Invalid export request: {e}", extra={"format": request.format})
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(
+            f"Export error: {e}",
+            extra={"format": request.format, "doc_count": len(request.document_ids)},
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail="Failed to export documents")
 
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with detailed system status"""
+    """
+    Health check endpoint with detailed system status.
+    
+    Uses centralized ES client for health verification.
+    """
     health_status = {
         "status": "healthy",
         "version": settings.VERSION,
@@ -313,20 +422,16 @@ async def health_check():
         },
     }
 
-    # Check Elasticsearch connectivity
+    # Check Elasticsearch connectivity using centralized client
     try:
-        from elasticsearch import Elasticsearch
-
-        es = Elasticsearch(
-            [f"http://{settings.ELASTICSEARCH_HOST}:{settings.ELASTICSEARCH_PORT}"]
-        )
-        if es.ping():
+        es_client_instance = ElasticsearchClient()
+        if es_client_instance.is_healthy():
             health_status["components"]["elasticsearch"] = "healthy"
         else:
             health_status["components"]["elasticsearch"] = "unhealthy"
             health_status["status"] = "degraded"
     except Exception as e:
-        logger.warning(f"Elasticsearch health check failed: {e}")
+        logger.warning(f"Elasticsearch health check failed: {e}", exc_info=True)
         health_status["components"]["elasticsearch"] = "unhealthy"
         health_status["status"] = "degraded"
 
