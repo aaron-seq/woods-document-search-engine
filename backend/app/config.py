@@ -13,9 +13,10 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = Field(default="development", pattern="^(development|staging|production)$")
 
-    # Elasticsearch - Required in production
-    ELASTICSEARCH_HOST: str = Field(..., min_length=1)
-    ELASTICSEARCH_PORT: int = Field(..., ge=1, le=65535)
+    # Elasticsearch - With sensible defaults for local development
+    # Docker Compose and production deployments override these via environment variables
+    ELASTICSEARCH_HOST: str = Field(default="localhost", min_length=1)
+    ELASTICSEARCH_PORT: int = Field(default=9200, ge=1, le=65535)
     ELASTICSEARCH_INDEX: str = Field(default="wood_ai_documents", min_length=1)
     ELASTICSEARCH_TIMEOUT: int = Field(default=30, ge=5, le=300)
     ELASTICSEARCH_MAX_RETRIES: int = Field(default=5, ge=1, le=10)
